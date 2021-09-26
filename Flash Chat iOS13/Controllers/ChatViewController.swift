@@ -1,0 +1,134 @@
+//
+//  ChatViewController.swift
+//  Flash Chat iOS13
+//
+//  Created by Angela Yu on 21/10/2019.
+//  Copyright © 2019 Angela Yu. All rights reserved.
+//
+
+import UIKit
+import Firebase
+
+class ChatViewController: UIViewController {
+
+    @IBOutlet weak var tableView: UITableView!
+    @IBOutlet weak var messageTextfield: UITextField!
+    
+    var messages: [Message] = []
+    
+    let db = Firestore.firestore()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        title = K.appTitle
+        navigationItem.hidesBackButton = true
+        tableView.dataSource = self
+
+        tableView.register(UINib(nibName: K.cellNibName, bundle: nil), forCellReuseIdentifier: K.cellIdentifier)
+        
+        loadMessages()
+    }
+    
+    func loadMessages() {
+        
+        // order(by: K.FStore.dateField) : permet de trier la collection par date pour avoir les message en foncntion de la date
+        db.collection(K.FStore.collectionName)
+            .order(by: K.FStore.dateField)
+            .addSnapshotListener { querySnapshot, error in
+            self.messages = []
+
+            if let err = error {
+                print("Probleme lors du chargement des messages : \(err)")
+            } else {
+                if let dataDocuments = querySnapshot?.documents {
+                    for doc in dataDocuments {
+                        let data = doc.data()
+                        if let sender = data[K.FStore.senderField] as? String, let body = data[K.FStore.bodyField] as? String {
+                            let message = Message(sender: sender, body: body)
+                            self.messages.append(message)
+                            
+                            // Permet de dire a la table viens d'actualisé son affichage
+                            DispatchQueue.main.async {
+                                self.tableView.reloadData()
+                                let indexPath = IndexPath(row: self.messages.count - 1, section: 0)
+                                self.tableView.scrollToRow(at: indexPath, at: .top, animated: false)
+                            }
+                        }
+                    }
+                }
+
+            }
+        }
+    }
+    
+    @IBAction func sendPressed(_ sender: UIButton) {
+        if let messagebody = messageTextfield.text, let messageSender = Auth.auth().currentUser?.email {
+            db.collection(K.FStore.collectionName).addDocument(data: [
+                K.FStore.senderField: messageSender,
+                K.FStore.bodyField: messagebody,
+                K.FStore.dateField: Date().timeIntervalSince1970
+                
+            ]) { (error) in
+                if let err = error {
+                    print("Probleme de sauvegarde de données sur firestore : \(err)")
+
+                } else {
+                    print("Save ok")
+                    DispatchQueue.main.async {
+                        self.messageTextfield.text = ""
+
+                    }
+                }
+            }
+        }
+        
+        
+    }
+    
+    @IBAction func logoutPressed(_ sender: UIBarButtonItem) {
+        
+        let firebaseAuth = Auth.auth()
+        do {
+          try firebaseAuth.signOut()
+            navigationController?.popToRootViewController(animated: true)
+        } catch let signOutError as NSError {
+          print ("Error signing out: %@", signOutError)
+        }
+      
+        
+    }
+    
+}
+
+extension ChatViewController: UITableViewDataSource {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return messages.count
+    }
+    
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let message = messages[indexPath.row]
+        
+        let cell = tableView.dequeueReusableCell(withIdentifier: K.cellIdentifier, for: indexPath) as! MessageCell
+        
+        if message.sender == Auth.auth().currentUser?.email {
+            cell.leftAvatar.isHidden = true
+            cell.rightAvatar.isHidden = false
+            cell.messageBubble.backgroundColor = UIColor(named: K.BrandColors.purple)
+            cell.label.textColor = UIColor(named: K.BrandColors.lightPurple)
+        } else {
+            cell.rightAvatar.isHidden = true
+            cell.leftAvatar.isHidden = false
+            cell.messageBubble.backgroundColor = UIColor(named: K.BrandColors.lightPurple)
+            cell.label.textColor = UIColor(named: K.BrandColors.purple)
+        }
+        
+
+        
+        cell.label?.text = message.body
+        
+        return cell
+    }
+    
+    
+}
